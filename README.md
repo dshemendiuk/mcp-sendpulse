@@ -40,7 +40,6 @@ The client can provide a pre-existing, valid SendPulse OAuth 2.0 token directly.
 
 - [Node.js](https://nodejs.org/) (v18 or later recommended)
 - [npm](https://www.npmjs.com/) (usually comes with Node.js)
-- [ngrok](https://ngrok.com/download) (for exposing the local server to the internet)
 
 ### Installation
 
@@ -71,12 +70,12 @@ You should see a confirmation message in your console:
 
 ### Exposing the TEST Server with ngrok
 
-To make your local server accessible to services like the OpenAI sandbox, you need to expose it to the internet. Open a **new terminal window** and run:
+To make your local server accessible to services like the OpenAI sandbox, you need to expose it to the internet. You can use [ngrok](https://ngrok.com/download) for this purpose. Open a **new terminal window** and run:
 
 ```bash
 ngrok http 3000
 ```
 
-Ngrok will provide you with a public `https://` URL (e.g., `https://random-string.ngrok-free.app`). Use this URL (https://random-string.ngrok-free.app/mcp) when configuring the MCP tool in your LLM client.
+Ngrok will provide you with a public `https://` URL (e.g., `https://random-string.ngrok-free.app`). Use this URL (`https://random-string.ngrok-free.app/mcp`) when configuring the MCP tool in your LLM client.
 
 **Note:** To bypass the ngrok browser warning page, you may need to configure your LLM client to send an additional header with every request, for example: `ngrok-skip-browser-warning: "true"`.
