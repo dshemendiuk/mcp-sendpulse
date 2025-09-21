@@ -92,32 +92,49 @@ function createSendPulseServer(authToken: string): McpServer {
         version: "1.0.0",
     });
 
-    server.tool("get_account_info", "Returns account info", {}, async () => {
-        console.log("[TOOL CALL] Tool: get_account_info");
-        const result = await makeSendPulseRequest("/account", authToken);
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    });
-
-    server.tool("get_bots_list", "Returns a list of bots", {}, async () => {
-        console.log("[TOOL CALL] Tool: get_bots_list");
-        const result = await makeSendPulseRequest("/bots", authToken);
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    });
-
-    server.tool("get_dialogs", "Returns a list of dialogs", {
-        size: z.number().optional(), skip: z.number().optional(),
-        search_after: z.string().optional(), order: z.enum(["asc", "desc"]).optional(),
-    }, async (args) => {
-        console.log(`[TOOL CALL] Tool: get_dialogs, Arguments: ${JSON.stringify(args)}`);
-        const params = new URLSearchParams();
-        for (const [key, value] of Object.entries(args)) {
-            if (value !== undefined && value !== null) {
-                params.append(key, String(value));
-            }
+    server.tool(
+        "get_account_info",
+        "Returns information about your current account pricing plan, the number of messages in your plan, bots, contacts, list of tags, and variables",
+        {},
+        async () => {
+            console.log("[TOOL CALL] Tool: get_account_info");
+            const result = await makeSendPulseRequest("/account", authToken);
+            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
-        const result = await makeSendPulseRequest("/dialogs", authToken, params);
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    });
+    );
+
+    server.tool(
+        "get_bots_list",
+        "Returns lists of bots with information about each: bot ID, channel information, number of received and unread messages, bot status, and creation date",
+        {},
+        async () => {
+            console.log("[TOOL CALL] Tool: get_bots_list");
+            const result = await makeSendPulseRequest("/bots", authToken);
+            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        "get_dialogs",
+        "Returns information about your dialogs from all channels",
+        {
+            size: z.number().optional().describe("The limit of pagination items, that will be returned"),
+            skip: z.number().optional().describe("The offset of pagination items, where starts a current items batch"),
+            search_after: z.string().optional().describe("The id of element after which elements will be searched"),
+            order: z.enum(["asc", "desc"]).optional().describe("Sort order ASC or DESC"),
+        },
+        async (args) => {
+            console.log(`[TOOL CALL] Tool: get_dialogs, Arguments: ${JSON.stringify(args)}`);
+            const params = new URLSearchParams();
+            for (const [key, value] of Object.entries(args)) {
+                if (value !== undefined && value !== null) {
+                    params.append(key, String(value));
+                }
+            }
+            const result = await makeSendPulseRequest("/dialogs", authToken, params);
+            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+    );
 
     return server;
 }
