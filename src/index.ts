@@ -6,12 +6,69 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest, InitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-// --- SendPulse API Logic ---
+// --- SendPulse API & Auth Logic ---
 
-const SENDPULSE_API_BASE = "https://api.sendpulse.com/chatbots";
+const SENDPULSE_API_BASE = "https://api.sendpulse.com";
+
+interface Token {
+    token: string;
+    expiresAt: number; // Timestamp in milliseconds
+}
+
+const tokenCache = new Map<string, Token>();
+
+async function getSendPulseOAuthToken(apiId: string, apiSecret: string): Promise<Token | null> {
+    const cacheKey = apiId;
+
+    const cachedToken = tokenCache.get(cacheKey);
+    if (cachedToken && cachedToken.expiresAt > Date.now()) {
+        console.log(`[AUTH] Using cached token for API ID: ${apiId}`);
+        return cachedToken;
+    }
+
+    console.log(`[AUTH] No valid cached token. Fetching new token for API ID: ${apiId}`);
+    try {
+        const response = await fetch(`${SENDPULSE_API_BASE}/oauth/access_token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: apiId,
+                client_secret: apiSecret,
+            }),
+        });
+
+        if (!response.ok) {
+            console.error(`[AUTH] Failed to fetch token. Status: ${response.status}, Body: ${await response.text()}`);
+            return null;
+        }
+
+        const tokenData = await response.json();
+        if (!tokenData.access_token) {
+            console.error("[AUTH] Fetched token data is invalid. No access_token found.");
+            return null;
+        }
+
+        const expiresIn = (tokenData.expires_in || 3600) * 1000; // Convert to milliseconds
+        const newToken: Token = {
+            token: tokenData.access_token,
+            expiresAt: Date.now() + expiresIn - 60000, // Subtract 1 minute buffer
+        };
+
+        console.log(`[AUTH] Successfully fetched and cached new token for API ID: ${apiId}`);
+        tokenCache.set(cacheKey, newToken);
+        return newToken;
+
+    } catch (error) {
+        console.error("[AUTH] Error fetching OAuth token:", error);
+        return null;
+    }
+}
 
 async function makeSendPulseRequest(path: string, token: string, params?: URLSearchParams) {
-  const url = `${SENDPULSE_API_BASE}${path}${params ? `?${params}` : ''}`;
+  const url = `${SENDPULSE_API_BASE}/chatbots${path}${params ? `?${params}` : ''}`;
   try {
     const response = await fetch(url, {
       headers: {
@@ -35,41 +92,22 @@ function createSendPulseServer(authToken: string): McpServer {
         version: "1.0.0",
     });
 
-    // Tool: Get Account Info
-    server.tool(
-      "get_account_info",
-      "Returns information about your current account pricing plan, the number of messages in your plan, bots, contacts, list of tags, and variables",
-      {},
-      async () => {
+    server.tool("get_account_info", "Returns account info", {}, async () => {
         console.log("[TOOL CALL] Tool: get_account_info");
         const result = await makeSendPulseRequest("/account", authToken);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-      }
-    );
+    });
 
-    // Tool: Get Bots List
-    server.tool(
-      "get_bots_list",
-      "Returns lists of bots with information about each: bot ID, channel information, number of received and unread messages, bot status, and creation date",
-      {},
-      async () => {
+    server.tool("get_bots_list", "Returns a list of bots", {}, async () => {
         console.log("[TOOL CALL] Tool: get_bots_list");
         const result = await makeSendPulseRequest("/bots", authToken);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-      }
-    );
+    });
 
-    // Tool: Get Dialogs List
-    server.tool(
-      "get_dialogs",
-      "Returns information about your dialogs from all channels",
-      {
-        size: z.number().optional().describe("The limit of pagination items, that will be returned"),
-        skip: z.number().optional().describe("The offset of pagination items, where starts a current items batch"),
-        search_after: z.string().optional().describe("The id of element after which elements will be searched"),
-        order: z.enum(["asc", "desc"]).optional().describe("Sort order ASC or DESC"),
-      },
-      async (args) => {
+    server.tool("get_dialogs", "Returns a list of dialogs", {
+        size: z.number().optional(), skip: z.number().optional(),
+        search_after: z.string().optional(), order: z.enum(["asc", "desc"]).optional(),
+    }, async (args) => {
         console.log(`[TOOL CALL] Tool: get_dialogs, Arguments: ${JSON.stringify(args)}`);
         const params = new URLSearchParams();
         for (const [key, value] of Object.entries(args)) {
@@ -79,12 +117,10 @@ function createSendPulseServer(authToken: string): McpServer {
         }
         const result = await makeSendPulseRequest("/dialogs", authToken, params);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-      }
-    );
+    });
 
     return server;
 }
-
 
 // --- Express Server Implementation ---
 
@@ -104,21 +140,35 @@ app.post('/mcp', async (req, res) => {
     const initializeRequest = req.body as InitializeRequest;
     let authToken: string | undefined;
 
-    // 1. Check for Authorization header (e.g., "Bearer <token>")
+    // --- AUTH LOGIC ---
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
         authToken = authHeader.substring(7);
+        console.log("[AUTH] Using direct Bearer token.");
     }
 
-    // 2. If not in header, fall back to checking the request body
+    const apiId = req.headers['x-sp-id'] as string | undefined;
+    const apiSecret = req.headers['x-sp-secret'] as string | undefined;
+    if (!authToken && apiId && apiSecret) {
+        console.log(`[AUTH] Attempting to authorize with API ID/Secret for: ${apiId}`);
+        const token = await getSendPulseOAuthToken(apiId, apiSecret);
+        if (token) {
+            authToken = token.token;
+        }
+    }
+
     if (!authToken) {
-        authToken = (initializeRequest.params as any)?.authorization as string | undefined;
+        const bodyAuth = (initializeRequest.params as any)?.authorization as string | undefined;
+        if (bodyAuth) {
+            authToken = bodyAuth;
+            console.log("[AUTH] Using token from request body.");
+        }
     }
 
     if (!authToken) {
         res.status(401).json({
             jsonrpc: '2.0',
-            error: { code: -32001, message: 'Unauthorized: Authorization token is missing in initialize request.' },
+            error: { code: -32001, message: 'Unauthorized: Authentication credentials were not provided or are invalid.' },
             id: (initializeRequest as any).id,
         });
         return;
@@ -139,7 +189,6 @@ app.post('/mcp', async (req, res) => {
       }
     };
     
-    // Create a server instance with the token provided for this specific session
     const server = createSendPulseServer(authToken);
     await server.connect(transport);
 
