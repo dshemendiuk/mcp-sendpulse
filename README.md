@@ -6,11 +6,24 @@ This server is built with TypeScript and runs on Node.js using the Express frame
 
 ## Features
 
-The server exposes the following tools to the LLM, based on the SendPulse OpenAPI specification:
+The server exposes a combination of global and universal, channel-specific tools to the LLM.
+
+### Global Tools
+
+These tools provide general, account-wide information.
 
 - `get_account_info`: Returns information about the current SendPulse account, including pricing plan, message counts, bots, contacts, etc.
 - `get_bots_list`: Returns a list of all connected chatbots with details for each.
 - `get_dialogs`: Returns a list of dialogs from all channels, with support for pagination and sorting.
+
+### Universal Tools
+
+These tools perform actions on specific channels. They require a `channel` parameter to be specified.
+
+- **`send_message`**: Sends a text message to a contact.
+  - **`channel`**: The channel to use. Supported values: `whatsapp`, `telegram`, `instagram`, `messenger`, `livechat`, `viber`.
+  - **`contact_id`**: The ID of the recipient.
+  - **`text`**: The message content.
 
 ## Authentication
 
