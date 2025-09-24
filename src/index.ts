@@ -215,7 +215,7 @@ app.use(express.json());
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
 app.post('/mcp', async (req, res) => {
-  console.log(`\n--- New POST /mcp Request ---\nSession ID Header: ${req.headers['mcp-session-id']}\nRequest Body: ${JSON.stringify(req.body, null, 2)}\n---------------------------\n`);
+  console.log(`\n--- New POST /mcp Request ---\nHeaders: ${JSON.stringify(req.headers, null, 2)}\nSession ID Header: ${req.headers['mcp-session-id']}\nRequest Body: ${JSON.stringify(req.body, null, 2)}\n---------------------------\n`);
 
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
@@ -232,7 +232,7 @@ app.post('/mcp', async (req, res) => {
   if (sessionId && transports[sessionId]) {
     transport = transports[sessionId];
   } else if (!sessionId && isInitializeRequest(req.body)) {
-    
+    console.log('[INFO] Received initialize request. Creating new session...');
     const initializeRequest = req.body as InitializeRequest;
     let authToken: string | undefined;
 
@@ -307,6 +307,11 @@ app.get('/mcp', handleSessionRequest);
 app.delete('/mcp', handleSessionRequest);
 
 const port = 3000;
-app.listen(port, () => {
+const httpServer = app.listen(port, () => {
     console.log(`SendPulse MCP HTTP Server running on http://localhost:${port}/mcp`);
+});
+
+httpServer.on('error', (err) => {
+    console.error('[SERVER STARTUP ERROR]', err);
+    process.exit(1);
 });
